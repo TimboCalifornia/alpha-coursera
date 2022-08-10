@@ -1,0 +1,326 @@
+---
+title: "Coursera-Cyclistc"
+output: html_document
+date: '2022-06-05'
+---
+
+```{r Basic-Setup, echo = FALSE, message = FALSE, warning = FALSE}
+r = getOption("repos")
+r["CRAN"] = "http://cran.us.r-project.org"
+options(repos = r)
+```
+
+*This is an R Markdown document. For more details, see <http://rmarkdown.rstudio.com>.*
+
+# COURSERA GOOGLE LEARNING WITH CYCLISTIC BIKE SHARES
+
+## **The question we want to answer is:**
+
+## HOW DO ANNUAL MEMBERS AND CASUAL RIDERS USE CYCLISTIC BIKES DIFFERENTLY?
+
+*(We're working with the fictional company Cyclistic, but the data has been anonymized, licensed, and provided to Google and Coursera from Motivate International Inc.)*
+
+### SUMMARY / CONLUSIONS:
+
+1.  **Members ride more often, but for shorter trips.**
+2.  **Members keep riding through winter months.**
+3.  **Non-members take longer rides, but less predictably.**
+4.  **Summer months, weekends, and late night / early morning are busiest for all riders.**
+5.  **Some stations are much busier than others.**
+6.  **Three stations represent almost half of all trips.**
+
+My top three recommendations, based on the above conclusions, is that Cyclistic should:
+
+1.  **FOCUS ON SPRING AND SUMMER months to push hard for converting casual riders to members who subscribe throughout Fall and Winter months**
+
+2.  **DEVELOP BETTER DATA ARCHITECTURE based on collecting data that tracks unique user profiles and logins, not just bikes and rides, as well as data on costs-benefits for Cyclistic per-ride, per-minute, and per-member**
+
+3.  **FOCUS ADVERTISEMENTS AT PEAK USE LOCATIONS, especially the top three most popular stations, and especially around late-night / early-morning users and use cases**
+
+Our business task is to make sense of the available data on rides, working towards the goal of increasing Cyclistic membership.
+
+The data sources used were the collection of .CSV files provided at this link: <https://divvy-tripdata.s3.amazonaws.com/index.html>
+
+This R Markdown file provides a more detailed step-by-step of my thought process, approach, and how I did the data Extract / Transform / Load (ETL), then Exploratory Data Analysis (EDA), followed by data visualization (data viz) and drawing conclusions.
+
+Data viz comes at the end of this R Markdown document.
+
+## STEP 1: installing all relevant packages and libraries.
+
+These are broken out in many individual library commands instead of comma-delimited lists just for readability.
+
+For this project, we add the tidyverse, ggplot2, and lubridate on top of base R.
+
+```{r Installing-Packages, echo = TRUE, message = FALSE, warning = FALSE}
+install.packages("tidyverse")
+```
+
+Once packages are all installed, then it's time to load the necessary libraries.
+
+```{r Installing-Libraries, echo = TRUE, message = FALSE, warning = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+library(readr)
+library(lessR)
+```
+
+## STEP 2: Next, we Extract, Transform, and Load (ETL) and clean the data, starting with importing and converting .CSV's into Tibbles.
+
+Now that our packages and libraries are setup, we load/import the dataset(s).
+
+We were given 4 separate .CSV sheets, each representing one quarter of 2019, totalling around \~3.8m rows and about 500 megabytes of data.
+
+You could do a lot of this in SQL in a separate application, export as one large .CSV or .JSON, and then import that - depending on how large the export is.
+
+One spreadsheet had the wrong column names, so I used Google BigQuery to rename them with a series of SELECT \* EXCEPT ... AS commands in Google BigQuery (because it does not support ALTER TABLE ... RENAME AS). Once that was done, I combined all four spreadsheets in SQL using the "UNION ALL" function.
+
+Unfortunately, BigQuery limits what you can export, so even though it is possible to make a single data table with \~3.8m rows and correct column headings, it is not possible to export it from BigQuery.
+
+### Importing discrete .CSV's and binding into one huge Tibble
+
+That means we are importing four separate (properly-columned) .CSV files in R.
+
+I use the "read_csv()" function from lessR for this.
+
+```{r Importing-Data-1, echo = TRUE, message = FALSE, warning = FALSE}
+setwd("C:/Users/timot/Documents/R/Coursera")
+importDF1 <- read_csv("Cyclistic19Q1.csv")
+importDF2 <- read_csv("Cyclistic19Q2.csv")
+importDF3 <- read_csv("Cyclistic19Q3.csv")
+importDF4 <- read_csv("Cyclistic19Q4.csv")
+```
+
+We then convert these dataframes to Tibbles using "as_tibble()".
+
+```{r Importing-Data-2, echo = TRUE, message = FALSE, warning = FALSE}
+importTIB1 <- as_tibble(importDF1) 
+importTIB2 <- as_tibble(importDF2) 
+importTIB3 <- as_tibble(importDF3) 
+importTIB4 <- as_tibble(importDF4) 
+```
+
+Once we have the imported Tibbles set up, we look at overall structure and properties.
+
+We use "dim" to see how many rows and columns we have, followed by "str" to provide a high level explanation of each column's data type. Then we use "glimpse" to preview the actual values in each row.
+
+```{r Cleaning-Data-1, echo = TRUE, message = FALSE, warning = FALSE}
+dim(importTIB1)
+dim(importTIB2)
+dim(importTIB3)
+dim(importTIB4)
+
+str(importTIB1)
+str(importTIB2)
+str(importTIB3)
+str(importTIB4)
+```
+
+We see that all the data types are the same and ready for merging, except for one: in importDF2, the columns "start_time" and "end time" are both characters instead of date/time format. These are four large files so instead of showing all the results of "dim" and "str", rest assured that all column names now match! Next we do some data wrangling - specifically, we combine all four Tibbles into one giant Tibble.
+
+```{r Cleaning-Data-2, echo = TRUE, message = FALSE, warning = FALSE}
+importTIB2$start_time <- as.POSIXct(importTIB2$start_time, format = "%Y-%m-%d %H:%M:%S")
+importTIB2$end_time <- as.POSIXct(importTIB2$start_time, format = "%Y-%m-%d %H:%M:%S")
+all_trips <- bind_rows(importTIB1, importTIB2, importTIB3, importTIB4)
+
+dim(all_trips)
+str(all_trips)
+glimpse(all_trips)
+```
+
+Success! We now have one single Tibble with 3,818,004 observations of 12 variables. First, we want to backup the large imported Tibble before further manipulation, so we can refer back to if needed after the next steps, without having to redo the combining / mutating.
+
+```{r Cleaning-Data-3, echo = TRUE, message = FALSE, warning = FALSE}
+all_trips_backup <- as_tibble(all_trips)
+write_csv(all_trips_backup, "all_trips_backup.csv")
+```
+
+### Renaming and removing columns as necessary for this dataset.
+
+After that, we rename column variables in our all_trips Tibble to match the guide's conventions; because we have many packages loaded, we specify that it is the "dplyr::rename" function.
+
+After that, we cut the columns "gender" and "birthyear", per the guide.
+
+And then, we fix an issue in the "member_casual" column. There are two names for members ("member" and "Subscriber") and two names for casual riders ("Customer" and "casual"). We consolidate that from four to two labels by replacing "Subscriber" with "member" and "Customer" with "casual".
+
+```{r Cleaning-Data-4, echo = TRUE, message = FALSE, warning = FALSE}
+(all_trips <- dplyr::rename(all_trips 
+    ,ride_id = trip_id
+    ,rideable_type = bikeid 
+    ,started_at = start_time  
+    ,ended_at = end_time  
+    ,start_station_name = from_station_name 
+    ,start_station_id = from_station_id 
+    ,end_station_name = to_station_name 
+    ,end_station_id = to_station_id 
+    ,member_casual = usertype))
+
+all_trips <- all_trips %>%  
+  select(-c(birthyear, gender))
+
+all_trips <-  all_trips %>% 
+  mutate(member_casual = dplyr::recode(member_casual, "Subscriber" = "member" ,"Customer" = "casual"))
+```
+
+### Adding useful / calculated columns that we can use for our analysis.
+
+The next and final step of our ETL of this data is to have some calculated columns and data aggregation.
+
+We first add columns that list the date, month, day, and year of each ride derived from the "date" column. We then make the "day_of_week" column an ordered factor so it runs Sun-Mon-Tues-etc.
+
+```{r Cleaning-Data-5, echo = TRUE, message = FALSE, warning = FALSE}
+all_trips$date <- as.Date(all_trips$started_at) 
+all_trips$month <- format(as.Date(all_trips$date), "%m")
+all_trips$day <- format(as.Date(all_trips$date), "%d")
+all_trips$year <- format(as.Date(all_trips$date), "%Y")
+all_trips$day_of_week <- format(as.Date(all_trips$date), "%A")
+
+```
+
+We next add a "ride_length", in seconds, calculated column; it comes out as character, so we make it a Factor to easily convert it to numeric. Next, we convert from seconds to minutes by dividing by 60 with another calculated column. Then, we delete the old, redundant "tripduration" field. Finally, we'll get rid of ride lengths with negative values (when the bikes were not in use), and then do a final backup to CSV of our cleaned and ready-for-analysis data.
+
+```{r Cleaning-Data-6, echo = TRUE, message = FALSE, warning = FALSE}
+all_trips$ride_length <- difftime(all_trips$ended_at,all_trips$started_at)
+all_trips$ride_length <- as.numeric(as.character(all_trips$ride_length))
+all_trips <- all_trips[!(all_trips$start_station_name == "HQ QR" | all_trips$ride_length<0),]
+all_trips <- all_trips %>% 
+  mutate(ride_length_mins = ride_length / 60) 
+all_trips <- all_trips %>%  
+  select(-c(tripduration))
+
+```
+
+Unfortunately, we can see in the next code chunk that there are still over a million "zero" ride_length values - that's over a third of our data on bike trips! We're not sure if that's an error in how Cyclistic counts trips, or false trip starts, or what, but that's going to muddle our analysis, so we want to drop all of the zero values. Then, we'll save the cleaned data to a new . CSV backup.
+
+```{r Cleaning-Data-7, echo = TRUE, message = FALSE, warning = FALSE}
+sum(all_trips$ride_length == 0)
+all_trips <- all_trips[!(all_trips$ride_length==0),]
+write_csv(all_trips, "all_trips_cleaned.csv")
+```
+
+There we go!
+
+We now have ETL'd 4 fairly dirty, separate .CSV files into one Tibble of 2,709,828 observations of 16 variables that are ready for analysis (and fully backed up).
+
+## STEP 3: Now that our data is loaded, cleaned, and backed up, it's time for Exploratory Data Analysis (EDA).
+
+First, our focus is going to be primarily on ride length, and how that varies by casual users versus members. Let's run some basic descriptive statistics on ride length versus "member" or "casual".
+
+```{r EDA-Data-1, echo = TRUE, message = FALSE, warning = FALSE}
+summary(all_trips$ride_length)
+aggregate(all_trips$ride_length ~ all_trips$member_casual, FUN = mean)
+aggregate(all_trips$ride_length ~ all_trips$member_casual, FUN = median)
+aggregate(all_trips$ride_length ~ all_trips$member_casual, FUN = max)
+aggregate(all_trips$ride_length ~ all_trips$member_casual, FUN = min)
+
+aggregate(all_trips$ride_length ~ all_trips$member_casual, FUN = range)
+aggregate(all_trips$ride_length ~ all_trips$member_casual, FUN = IQR)
+aggregate(all_trips$ride_length ~ all_trips$member_casual, FUN = sd)
+```
+
+**This shows us that generally speaking, casual riders ... 1. have much more variance in their rides, and 2. also tend to take longer rides, on average.**
+
+Let's look at the average ride time by each day for members vs casual users. R consistently threw up errors I couldn't resolve with this output, so I sadly had to copy/paste into Excel and save this table as a .CSV, then re-import it.
+
+```{r EDA-Data-2, echo = TRUE, message = FALSE, warning = FALSE}
+trips_weekday <- read_csv("C:/Users/timot/Documents/R/Coursera/trips_weekday.csv")
+View(trips_weekday)
+```
+
+So we can see that casual, non-member riders have much higher values than members, at least for each ride's length. Let's plot ride length against weekday, broken out by member or casual.
+
+```{r EDA-Data-3, echo = TRUE, message = FALSE, warning = FALSE}
+avg_by_weekday <- aggregate(all_trips$ride_length_mins ~ all_trips$day_of_week, FUN = mean)
+avg_by_weekday <- dplyr::rename(avg_by_weekday, "day" = "all_trips$day_of_week") 
+avg_by_weekday <- dplyr::rename(avg_by_weekday, "length" = "all_trips$ride_length_mins")
+```
+
+Let's visualize that.
+
+```{r EDA-Data-4, include = FALSE, echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = avg_by_weekday)+ 
+  geom_bar(mapping = aes(x = day, y = length), stat = "identity")
+```
+
+![Basic bar chart of the weekday average ride lengths.](Coursera-Cyclistic-barplot-weekdays.png)
+
+We can see that we have some pretty significant differences by day of the week: the weekends have the most minutes ridden, on average.
+
+When we look at the average ride length by day of week and by membership, we can see even bigger differences.
+
+![Bar chart of weekday average ride lengths, by membership.](Coursera-Cyclistic-barplot-weekdays-memberdetail.png){width="800"}
+
+This reinforces the fact that we have serious differences in each ride length: non-members take much longer rides when they rent bikes.
+
+However, let's look at the total rides taken overall; we can see that when looking at rides themselves, not minutes ridden, members actually comprise a very large percent of all rides.
+
+![All rides (not minutes), by members and non-members.](Coursera-Cyclistic-area-totalrides-member.png){width="800"}
+
+What about hour of the day, not just day of the week? Look at how many more longer rides happen very late at night / very early in the morning.
+
+![Average ride length by hour of the day, and by membership](Coursera-Cyclistic-line-hours-member.png){width="1000"}
+
+Zooming back out from hours and days, let's look at monthly trends over the course of one calendar year.
+
+![All bike rides (not minutes) by month and by membership](Coursera-Cyclistic-area-months-member.png){width="1000"}
+
+While members still comprise a majority of rides through the year, the busiest months of July, August, and September see total rides (not minutes ridden) surge for casual riders.
+
+The rides by casual members in colder months make up only a tiny fraction of total rides, and members make up almost all of the cold month rides.
+
+### These charts paint a fairly compelling picture of what members versus non-members are doing.
+
+Members are largely taking shorter, recurring, rides that don't vary much hour by hour, day by day, or week by week.
+
+Casual riders / non-members are taking rides that all last longer, but occur less frequently and with less consistency. The longest rides occur after midnight in the earliest hours of the day.
+
+For both members and non-members, their longest rides tend to happen from 1am to 3am, and on Friday (for non-members) and Saturday (for members).
+
+For both members and non-members, ridership coincides with summer months, with a steady climb starting in April, peaking in August, and then dropping rapidly through October.
+
+Let's take a look at another area where we had abundant data: where rides are occurring.
+
+![Ride minutes by station](Coursera-Cyclistic-line-stations.png){width="1000"}
+
+Almost half of all minutes ridden come from rides starting at just two stations:
+
+-   Streeter Drive and Grand Avenue station
+
+-   Lake Shore Drive and Monroe Street station
+
+While looking at members versus non-members by day of the week or hour of the day, we can see that some stations overwhelmingly have members riding the bikes, but most stations overwhelmingly have casual riders.
+
+![Ride minutes by station, and by membership](Coursera-Cyclistic-line-stations-members.png)
+
+We see the same pattern play out by station as we saw across months, days, and hours: some surges of casual riders drive minutes ridden up very high, while members' minutes ridden remain consistent, but lower, across most stations.
+
+# CONCLUSIONS: WEEKENDS AND SUMMER MONTHS ARE BUSIEST FOR ALL RIDERS.
+
+### SUMMARY / CONLUSIONS:
+
+1.  **Members ride more often, but for shorter trips.**
+2.  **Members keep riding through winter months.**
+3.  **Non-members take longer rides, but less predictably.**
+4.  **Summer months, weekends, and late night / early morning are busiest for all riders.**
+5.  **Some stations are much busier than others.**
+6.  **Three stations represent almost half of all trips.**
+
+My top three recommendations, based on the above conclusions, is that Cyclistic should:
+
+1.  **FOCUS ON SPRING AND SUMMER months to push hard for converting casual riders to members who subscribe throughout Fall and Winter months**
+
+    -   March, April, and May are when all riders start taking more trips, and this is when advertisements should roll out in force
+
+    -   Late night / early morning rides spike throughout summer, and this should be when customer service is highest to win brand loyalty
+
+2.  **DEVELOP BETTER DATA ARCHITECTURE based on collecting data that tracks unique user profiles and logins, not just bikes and rides, as well as data on costs-benefits for Cyclistic per-ride, per-minute, and per-member**
+
+    -   Being forced to use each trip as the base unit of analysis was challenging; a better base unit of analysis would be unique rider IDs
+
+    -   Lack of data on where revenues came from (per trip, per mile, per month membership fee, etc) made it harder to know where growth would be most beneficial for the company
+
+3.  **FOCUS ADVERTISEMENTS AT PEAK USE LOCATIONS, especially the top three most popular stations, and especially around late-night / early-morning users and use cases**
+
+    -   Almost all rides and all longer rides happen after midnight; advertisements should therefore run in the 4 hours before that, to nudge potential users towards Cyclistic as they start their nights out
+
+    -   The busiest stations where there is already the most rides represent opportunities to expand market dominance and convert the many casual riders to members through incentives and discounts
